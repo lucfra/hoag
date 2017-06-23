@@ -4,6 +4,7 @@ from hoag.logistic import _logistic_loss, LogisticRegressionCV
 import sklearn.datasets as sk_dt
 import numpy as np
 from collections import OrderedDict
+import scipy.sparse as sp
 
 try:
     from tabulate import tabulate
@@ -121,6 +122,29 @@ class Dataset:
         shape = self._shape(self.target)
         return 1 if len(shape) == 1 else _maybe_cast_to_scalar(shape[1:])
 
+    def create_supplier(self, x, y, other_feeds=None):
+        """
+        Return a standard feed dictionary for this dataset.
+
+        :param x: placeholder for data
+        :param y: placeholder for target
+        :param other_feeds: optional other feeds
+        :return: a callable.
+        """
+        if not other_feeds: other_feeds = {}
+
+        # noinspection PyUnusedLocal
+        def _supplier(step=None):
+            """
+
+            :param step: unused, just for making it compatible with `HG` and `Saver`
+            :return: the feed dictionary
+            """
+            return {**{x: self.data, y: self.target}, **other_feeds}
+
+        return _supplier
+
+
 
 def redivide_data(datasets, partition_proportions=None, shuffle=False, filters=None, maps=None):
     """
@@ -139,7 +163,8 @@ def redivide_data(datasets, partition_proportions=None, shuffle=False, filters=N
     than one sample, for data augmentation)
     :return: a list of datasets of length equal to the (possibly augmented) partition_proportion
     """
-    import scipy.sparse as sp
+
+    # import scipy.sparse as sp
 
     def stack_or_concat(list_of_arays):
         func = np.concatenate if list_of_arays[0].ndim == 1 else np.vstack
@@ -264,8 +289,8 @@ def generate_multiclass_dataset(n_samples=100, n_features=10,
     return res
 
 
-def hoag_fit(datasets, max_iter=100, alpha0=0., verbose=2,
-             projection=None, do_print=False, hyper_step_mul=1.):
+def hoag_fit(saver, datasets, max_iter=100, alpha0=0., verbose=2,
+             projection=None, append_string='_HOAG'):
     tr_sup = (datasets.train.data, datasets.train.target)
     # n_tr = datasets.train.num_examples
     val_sup = (datasets.validation.data, datasets.validation.target)
@@ -274,18 +299,20 @@ def hoag_fit(datasets, max_iter=100, alpha0=0., verbose=2,
 
     clf = LogisticRegressionCV(verbose=verbose, max_iter=max_iter, alpha0=alpha0)
 
-    log_dict = OrderedDict([['training error', lambda: _logistic_loss(clf.coef_, tr_sup[0], tr_sup[1],
-                                                           clf.alpha_)],
-                ['validation error', lambda: _logistic_loss(clf.coef_, val_sup[0],
-                                                             val_sup[1], alpha=0.)],
-                ['test error', lambda: _logistic_loss(clf.coef_, tst_sup[0],
-                                                       tst_sup[1], alpha=0.)],
-                ['validation accuracy', lambda: clf.accuracy(val_sup[0], val_sup[1])],
-                ['test accuracy', lambda: clf.accuracy(tst_sup[0], tst_sup[1])],
-                ['alpha', lambda: clf.alpha_],
-                ['der alpha', lambda: clf.der_alpha_],
-                ['step size', lambda: clf.step_size]])
-    all_steps_log = OrderedDict([[k, []] for k in log_dict])
+    if saver:
+        saver.clear()
+        saver.add_items('training error', lambda: _logistic_loss(clf.coef_, tr_sup[0], tr_sup[1],
+                                                                 clf.alpha_),
+                        'validation error', lambda: _logistic_loss(clf.coef_, val_sup[0],
+                                                                   val_sup[1], alpha=0.),
+                        'test error', lambda: _logistic_loss(clf.coef_, tst_sup[0],
+                                                             tst_sup[1], alpha=0.),
+                        'validation accuracy', lambda: clf.accuracy(val_sup[0], val_sup[1]),
+                        'test accuracy', lambda: clf.accuracy(tst_sup[0], tst_sup[1]),
+                        'alpha', lambda: clf.alpha_,
+                        'der alpha', lambda: clf.der_alpha_,
+                        'step size', lambda: clf.step_size)
+    # all_steps_log = OrderedDict([[k, []] for k in log_dict])
 
     stp = 0
 
@@ -295,17 +322,9 @@ def hoag_fit(datasets, max_iter=100, alpha0=0., verbose=2,
         clf.alpha_ = np.array(alpha)
         clf.der_alpha_ = der_alpha
         clf.step_size = step_size
-
-        print()
-        print('Log step', stp)
-        [all_steps_log[k].append(v()) for k, v in log_dict.items()]
-        if tabulate:
-            print(tabulate([(k, v()) for k, v in log_dict.items()]))
-        else:
-            for k, v in log_dict.items(): print(k, v())
-
+        if saver: saver.save(stp, append_string=append_string)
         stp += 1
 
     clf.fit(tr_sup[0], tr_sup[1], val_sup[0], val_sup[1], callback=callback, projection=projection)
 
-    return clf, all_steps_log
+    return clf, saver.pack_save_dictionaries(append_string=append_string) if saver else None
