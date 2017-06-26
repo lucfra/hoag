@@ -300,7 +300,7 @@ def hoag_fit(saver, datasets, max_iter=100, alpha0=0., verbose=2,
     clf = LogisticRegressionCV(verbose=verbose, max_iter=max_iter, alpha0=alpha0)
 
     if saver:
-        saver.clear()
+        saver.clear_items()
         saver.add_items('training error', lambda: _logistic_loss(clf.coef_, tr_sup[0], tr_sup[1],
                                                                  clf.alpha_),
                         'validation error', lambda: _logistic_loss(clf.coef_, val_sup[0],
