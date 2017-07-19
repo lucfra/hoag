@@ -9,8 +9,8 @@ def rtho_experiment(datasets, saver=None, optimizer=rf.MomentumOptimizer, alpha0
                     hyper_optimizer_class=rf.GradientDescentOptimizer,
                     hyper_iterations=500,
                     hyper_optimizer_kwargs=None):
-    if saver:
-        saver.save_setting(vars(), excluded=optimizer_kwargs, append_string=append_string)
+    # if saver:
+    #     saver.save_setting(vars(), excluded=optimizer_kwargs, append_string=append_string)
 
     train = datasets.train
     x = tf.placeholder(tf.float32)
